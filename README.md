@@ -1,5 +1,4 @@
-#GoLang_SFTP
-
+<h2>GoLang SFTP</h2>
 <p>The code in sftpclient.go implements an SFTP client in Go language. It connects to an SFTP server using SSH, authenticates with a username and password, and then opens an SFTP session to upload a file to the server.</p>
 
 <p>The script prompts the user to enter their SFTP username, password, server IP address, and filename to upload. It then establishes a connection to the server, opens an SFTP session, and creates a remote file on the server with the same filename as the local file.</p>
