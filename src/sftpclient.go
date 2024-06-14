@@ -1,96 +1,113 @@
 package main
 
 import (
-	"fmt"
-	"net"
-	"os"
-	"sync"
-	"time"
-
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
+    "fmt"
+    "io"
+    "os"
+    "golang.org/x/crypto/ssh"
+    "github.com/pkg/sftp"
+    "log"
 )
 
 func main() {
-	// Get SFTP credentials
-	username := getSftpUsername()
-	password := getSftpPassword()
-	serverIP := getServerIP()
+    var (
+        username string
+        password string
+        server   string
+        port     string
+        filePath string
+        action   string
+    )
 
-	// Connect to server
-	conn, err := ssh.Dial("tcp", serverIP+":22", &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-			ssh.PublicKeysCallback(agent.NewClient),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	})
-	if err != nil {
-		fmt.Println("Failed to connect to server:", err)
-		return
-	}
-	defer conn.Close()
+    fmt.Print("Enter username: ")
+    fmt.Scan(&username)
+    fmt.Print("Enter password: ")
+    fmt.Scan(&password)
+    fmt.Print("Enter server address: ")
+    fmt.Scan(&server)
+    fmt.Print("Enter server port: ")
+    fmt.Scan(&port)
+    fmt.Print("Enter file path: ")
+    fmt.Scan(&filePath)
+    fmt.Print("Upload or Download (u/d): ")
+    fmt.Scan(&action)
 
-	// Open SFTP session
-	sftpClient, err := sftp.NewClient(conn)
-	if err != nil {
-		fmt.Println("Failed to open SFTP session:", err)
-		return
-	}
-	defer sftpClient.Close()
+    // Configure SSH client
+    config := &ssh.ClientConfig{
+        User: username,
+        Auth: []ssh.AuthMethod{
+            ssh.Password(password),
+        },
+        HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+    }
 
-	// Implement rate limiting and IP blocking
-	var (
-		mutex    sync.Mutex
-		attempts = make(map[string]int)
-	)
+    // Connect to the server
+    conn, err := ssh.Dial("tcp", server+":"+port, config)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer conn.Close()
 
-	for {
-		// Get file to upload
-		filename := getFilename()
-		file, err := os.Open(filename)
-		if err != nil {
-			fmt.Println("Failed to open file:", err)
-			continue
-		}
-		defer file.Close()
+    // Create new SFTP client
+    client, err := sftp.NewClient(conn)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Close()
 
-		// Check if IP is blocked
-		ip := getIPAddress()
-		mutex.Lock()
-		if attempts[ip] >= 3 {
-			fmt.Println("IP", ip, "is blocked")
-			mutex.Unlock()
-			time.Sleep(1 * time.Minute)
-			continue
-		}
-		mutex.Unlock()
-
-		// Upload file
-		remoteFile, err := sftpClient.Create(filename)
-		if err != nil {
-			fmt.Println("Failed to create remote file:", err)
-			continue
-		}
-		defer remoteFile.Close()
-
-		_, err = remoteFile.ReadFrom(file)
-		if err != nil {
-			fmt.Println("Failed to upload file:", err)
-			continue
-		}
-
-		// Increment attempts and sleep to implement rate limiting
-		mutex.Lock()
-		attempts[ip]++
-		mutex.Unlock()
-		time.Sleep(10 * time.Second)
-
-		fmt.Println("File", filename, "uploaded successfully")
-	}
+    if action == "u" {
+        // Upload file
+        uploadFile(client, filePath)
+    } else if action == "d" {
+        // Download file
+        downloadFile(client, filePath)
+    } else {
+        fmt.Println("Invalid action")
+    }
 }
+
+func uploadFile(client *sftp.Client, filePath string) {
+    srcFile, err := os.Open(filePath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer srcFile.Close()
+
+    dstFile, err := client.Create(filePath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer dstFile.Close()
+
+    _, err = io.Copy(dstFile, srcFile)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("File uploaded successfully.")
+}
+
+func downloadFile(client *sftp.Client, filePath string) {
+    srcFile, err := client.Open(filePath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer srcFile.Close()
+
+    dstFile, err := os.Create(filePath)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer dstFile.Close()
+
+    _, err = io.Copy(dstFile, srcFile)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("File downloaded successfully.")
+}
+
 
 func getSftpUsername() string {
 	fmt.Print("Enter SFTP username: ")
